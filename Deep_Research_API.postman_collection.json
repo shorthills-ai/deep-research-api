@@ -1,0 +1,269 @@
+{
+	"info": {
+		"_postman_id": "b8cdf32d-1e0f-4be2-a7a7-49e4d0a9c864",
+		"name": "Deep Research API",
+		"description": "A collection for testing the Deep Research Django API",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8000/api/",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						""
+					]
+				},
+				"description": "Check if the API is running"
+			},
+			"response": []
+		},
+		{
+			"name": "Start Research - Quantum Computing",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"query\": \"Latest advancements in quantum computing\",\n    \"model\": \"gemini-1.5-pro\",\n    \"max_searches\": 3,\n    \"custom_requirement\": \"Focus on practical applications for businesses\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8000/api/research",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"research"
+					]
+				},
+				"description": "Start a new research process on quantum computing"
+			},
+			"response": []
+		},
+		{
+			"name": "Start Research - Simple Test",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"query\": \"test query\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8000/api/research",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"research"
+					]
+				},
+				"description": "A simple test with minimal data"
+			},
+			"response": []
+		},
+		{
+			"name": "Start Research - AI Ethics",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"query\": \"Current challenges in AI ethics and governance\",\n    \"model\": \"gemini-1.5-pro\",\n    \"max_searches\": 3\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8000/api/research",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"research"
+					]
+				},
+				"description": "Start a new research process on AI ethics"
+			},
+			"response": []
+		},
+		{
+			"name": "Start Research - Climate Tech",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"query\": \"Breakthrough technologies in climate change mitigation\",\n    \"model\": \"gemini-1.5-pro\",\n    \"max_searches\": 4,\n    \"custom_requirement\": \"Include economic viability analysis for each technology\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8000/api/research",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"research"
+					]
+				},
+				"description": "Start a new research process on climate technologies"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Research Results",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8000/api/research/research_12345",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"research",
+						"research_12345"
+					]
+				},
+				"description": "Get the results of a research process. Replace 'research_12345' with the actual research ID you received from the start research request."
+			},
+			"response": []
+		},
+		{
+			"name": "Stream Research Updates",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8000/api/research/research_12345/stream",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"research",
+						"research_12345",
+						"stream"
+					]
+				},
+				"description": "Get real-time streaming updates for a research process using Server-Sent Events (SSE). Replace 'research_12345' with the actual research ID.\n\nNote: Postman's UI doesn't fully support streaming responses, but you can see the events as they arrive in the response preview. For proper streaming, use the HTML demo page or curl."
+			},
+			"response": []
+		},
+		{
+			"name": "Get Available Models",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8000/api/models",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"models"
+					]
+				},
+				"description": "Get the list of available LLM models"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Search Providers",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8000/api/search-providers",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"search-providers"
+					]
+				},
+				"description": "Get the list of available search providers"
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8000",
+			"type": "string"
+		}
+	]
+} 

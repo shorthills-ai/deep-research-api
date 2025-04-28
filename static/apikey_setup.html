@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Research API - API Key Setup</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #3498db;
+            margin-top: 30px;
+        }
+        h3 {
+            color: #2980b9;
+        }
+        .card {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        code {
+            background-color: #f1f1f1;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        pre {
+            background-color: #f1f1f1;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        .btn {
+            display: inline-block;
+            padding: 10px 15px;
+            background-color: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        .btn:hover {
+            background-color: #2980b9;
+        }
+        .warning {
+            background-color: #fdf2e9;
+            border-left: 4px solid #e67e22;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .success {
+            background-color: #e9fdf2;
+            border-left: 4px solid #2ecc71;
+            padding: 15px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Deep Research API - API Key Setup</h1>
+    
+    <div class="card">
+        <h2>Current Configuration Status</h2>
+        <p>The application requires several API keys to function properly. Currently, your configuration has the following status:</p>
+        
+        <h3>API Keys</h3>
+        <ul>
+            <li><strong>Google API Key:</strong> ✅ Configured</li>
+            <li><strong>OpenAI API Key:</strong> ❌ Missing or using placeholder</li>
+            <li><strong>Anthropic API Key:</strong> ❌ Missing or using placeholder</li>
+            <li><strong>Tavily API Key:</strong> ❌ Missing or using placeholder</li>
+        </ul>
+        
+        <h3>Search Provider</h3>
+        <p>Currently using: <code>searxng</code> (default)</p>
+        
+        <div class="warning">
+            <strong>Note:</strong> Public SearXNG instances frequently return 403 Forbidden errors or have reliability issues. Your searches may fail or return incomplete results.
+        </div>
+    </div>
+    
+    <h2>Setup Instructions</h2>
+    
+    <div class="card">
+        <h3>1. Minimum Setup (Already Working)</h3>
+        <p>Your Google API key is already configured, so you can use:</p>
+        <ul>
+            <li>Gemini models (default: <code>gemini-1.5-pro</code>)</li>
+            <li>SearXNG search (with fallback to multiple instances)</li>
+        </ul>
+        <div class="success">
+            <strong>Good news!</strong> This minimal configuration is already working.
+        </div>
+    </div>
+    
+    <div class="card">
+        <h3>2. Recommended: Configure Tavily Search</h3>
+        <p>For more reliable search results, we recommend configuring Tavily:</p>
+        <ol>
+            <li>Sign up at <a href="https://tavily.com/" target="_blank">https://tavily.com/</a></li>
+            <li>Get your API key</li>
+            <li>Update your <code>.env</code> file:</li>
+        </ol>
+        <pre>SEARCH_PROVIDER=tavily
+TAVILY_API_KEY=tvly-your-actual-tavily-key</pre>
+    </div>
+    
+    <div class="card">
+        <h3>3. Optional: Configure Additional LLM Providers</h3>
+        <p>To use additional language models, you can configure:</p>
+        
+        <h4>OpenAI (for GPT models)</h4>
+        <ol>
+            <li>Sign up at <a href="https://platform.openai.com/" target="_blank">https://platform.openai.com/</a></li>
+            <li>Get your API key</li>
+            <li>Add to your <code>.env</code> file:</li>
+        </ol>
+        <pre>OPENAI_API_KEY=sk-your-actual-openai-key</pre>
+        
+        <h4>Anthropic (for Claude models)</h4>
+        <ol>
+            <li>Sign up at <a href="https://www.anthropic.com/product" target="_blank">https://www.anthropic.com/product</a></li>
+            <li>Get your API key</li>
+            <li>Add to your <code>.env</code> file:</li>
+        </ol>
+        <pre>ANTHROPIC_API_KEY=sk-ant-your-actual-anthropic-key</pre>
+    </div>
+    
+    <h2>Testing Your Configuration</h2>
+    
+    <div class="card">
+        <p>A test script is provided to verify your API keys:</p>
+        <pre>python test_api_keys.py</pre>
+        <p>This will check all your API keys and provide a summary of what's working and what needs to be configured.</p>
+        <a href="#" class="btn" onclick="alert('This would run the test script in a real deployment.')">Run Test Script</a>
+    </div>
+    
+    <h2>Troubleshooting</h2>
+    
+    <div class="card">
+        <h3>SearXNG 403 Forbidden Errors</h3>
+        <p>If you see errors like "403 Forbidden" from SearXNG:</p>
+        <ul>
+            <li>This is a known issue with public SearXNG instances</li>
+            <li>The app will try multiple instances automatically</li>
+            <li>Consider switching to Tavily for more reliable results</li>
+        </ul>
+        
+        <h3>LLM API Key Errors</h3>
+        <p>If you see "No API key found for [model] model":</p>
+        <ul>
+            <li>You're trying to use a model that requires an API key you haven't provided</li>
+            <li>Or the API key format is incorrect</li>
+            <li>Check your <code>.env</code> file and ensure the key is correctly formatted</li>
+        </ul>
+    </div>
+    
+    <footer style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; color: #7f8c8d;">
+        <p>Deep Research API - <a href="https://github.com/u14app/deep-research" target="_blank">View on GitHub</a></p>
+    </footer>
+</body>
+</html> 

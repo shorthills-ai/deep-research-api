@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Research - Streaming Demo</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .status {
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .section {
+            margin-bottom: 30px;
+        }
+        h2 {
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #learnings {
+            padding-left: 20px;
+        }
+        #report {
+            line-height: 1.6;
+        }
+        pre {
+            background-color: #f8f8f8;
+            padding: 10px;
+            border-radius: 4px;
+            overflow: auto;
+        }
+        .api-url {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        #apiBaseUrl {
+            flex: 1;
+            padding: 10px;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Deep Research - Streaming Demo</h1>
+    
+    <div class="api-url">
+        <label for="apiBaseUrl">API Base URL:</label>
+        <input type="text" id="apiBaseUrl" placeholder="http://localhost:8000/api" 
+               value="http://localhost:8000/api">
+    </div>
+    
+    <div class="section">
+        <h2>Start Research</h2>
+        <input type="text" id="query" placeholder="Enter your research query" style="width: 70%; padding: 10px;">
+        <button onclick="runResearch()">Start Research</button>
+    </div>
+    
+    <div class="status" id="status">Status: Ready</div>
+    
+    <div class="section">
+        <h2>Research Progress</h2>
+        <pre id="progress"></pre>
+    </div>
+    
+    <div class="section">
+        <h2>Learnings</h2>
+        <ul id="learnings"></ul>
+    </div>
+    
+    <div class="section">
+        <h2>Final Report</h2>
+        <div id="report"></div>
+    </div>
+    
+    <script>
+        // Store the progress updates
+        const progressUpdates = [];
+        
+        function logProgress(message) {
+            progressUpdates.push(`[${new Date().toLocaleTimeString()}] ${message}`);
+            document.getElementById('progress').textContent = progressUpdates.join('\n');
+        }
+        
+        async function startResearch(query) {
+            const apiBaseUrl = document.getElementById('apiBaseUrl').value.trim();
+            const url = `${apiBaseUrl}/research`;
+            
+            logProgress(`Starting research request to ${url}`);
+            
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    query,
+                    max_searches: 3  // Limit to 3 searches for demo
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            logProgress(`Research started with ID: ${data.id}`);
+            return data.id;
+        }
+        
+        function connectToStream(researchId) {
+            const apiBaseUrl = document.getElementById('apiBaseUrl').value.trim();
+            const streamUrl = `${apiBaseUrl}/research/${researchId}/stream`;
+            
+            logProgress(`Connecting to stream: ${streamUrl}`);
+            
+            const eventSource = new EventSource(streamUrl);
+            
+            eventSource.onopen = () => {
+                logProgress('Stream connection established');
+            };
+            
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                logProgress(`Received update: ${JSON.stringify(data).substring(0, 100)}...`);
+                
+                // Handle different types of updates
+                if (data.status) {
+                    document.getElementById('status').textContent = `Status: ${data.status}`;
+                }
+                
+                if (data.learnings) {
+                    const list = document.getElementById('learnings');
+                    
+                    for (const learning of data.learnings) {
+                        const item = document.createElement('li');
+                        item.textContent = learning;
+                        list.appendChild(item);
+                    }
+                }
+                
+                if (data.report) {
+                    document.getElementById('report').innerHTML = data.report;
+                }
+                
+                // Close connection when research is complete
+                if (data.final) {
+                    logProgress('Research complete, closing stream');
+                    eventSource.close();
+                }
+            };
+            
+            eventSource.onerror = (error) => {
+                logProgress(`Stream error: ${error}`);
+                eventSource.close();
+                document.getElementById('status').textContent = 'Status: Error during streaming';
+            };
+            
+            return eventSource;
+        }
+        
+        async function runResearch() {
+            // Reset UI
+            document.getElementById('learnings').innerHTML = '';
+            document.getElementById('report').innerHTML = '';
+            document.getElementById('status').textContent = 'Status: Starting research...';
+            progressUpdates.length = 0;
+            document.getElementById('progress').textContent = '';
+            
+            const query = document.getElementById('query').value;
+            if (!query) {
+                document.getElementById('status').textContent = 'Status: Please enter a query';
+                return;
+            }
+            
+            try {
+                logProgress(`Starting research for query: "${query}"`);
+                const researchId = await startResearch(query);
+                connectToStream(researchId);
+            } catch (error) {
+                logProgress(`Error: ${error.message}`);
+                document.getElementById('status').textContent = `Status: Error - ${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html> 
