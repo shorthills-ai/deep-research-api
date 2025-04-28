@@ -25,7 +25,7 @@ A Django-based API for generating comprehensive research reports using Large Lan
 
 ```bash
 git clone <your-repository-url>
-cd django-api
+cd deep-research-api
 ```
 
 2. Create a virtual environment and activate it:
