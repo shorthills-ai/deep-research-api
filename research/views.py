@@ -18,6 +18,9 @@ from .utils import (
 )
 import os
 
+_loop = asyncio.new_event_loop()
+_thr = threading.Thread(target=_loop.run_forever, name="Async Runner",
+                        daemon=True)
 # --- API Endpoints ---
 
 @csrf_exempt
@@ -33,47 +36,54 @@ def start_research(request):
     try:
         # Print the raw request body for debugging
         print(f"Request body: {request.body}")
-        
+
         # Parse JSON data
         try:
-            data = json.loads(request.body)
+            bod=(request.body.decode("utf-8"))
+            data = json.loads(bod)
         except json.JSONDecodeError as e:
             return JsonResponse({"error": f"Invalid JSON: {str(e)}"}, status=400)
-            
+
         # Check for required fields
-        if 'query' not in data:
-            return JsonResponse({"error": "Missing required field: query"}, status=400)
-        
+        query=""
+        if "query" not in data:
+            query=data["messages"][2]["content"]
+            #return JsonResponse({"error": "Missing required field: query"}, status=400)
+
         # Create a new research object
         research = Research(
-            query=data.get('query'),
-            model=data.get('model', 'gemini-1.5-pro'),
-            search_model=data.get('search_model'),
-            max_searches=data.get('max_searches', 5),
-            custom_requirement=data.get('custom_requirement', '')
+            query=data.get("query",query),
+            model=data.get("model", "gemini-1.5-pro"),
+            search_model=data.get("search_model"),
+            max_searches=data.get("max_searches", 5),
+            custom_requirement=data.get("custom_requirement", ""),
         )
         research.save()
         
+        def run_async(coro):  # coro is a couroutine, see example
+            if not _thr.is_alive():
+                _thr.start()
+            future = asyncio.run_coroutine_threadsafe(coro, _loop)
+            return future.result()
+
         # Start the research process in the background using a thread
-        def run_async_research():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                loop.run_until_complete(conduct_research(research.id))
-            finally:
-                loop.close()
-                
+        # def run_async_research():
+        #     loop = asyncio.new_event_loop()
+        #     asyncio.set_event_loop(loop)
+        #     try:
+        #         loop.run_until_complete(conduct_research(research.id))
+        #     finally:
+        #         loop.close()
+        research_doc = run_async(conduct_research(research.id))
         # Start research in a separate thread
-        thread = threading.Thread(target=run_async_research)
-        thread.daemon = True
-        thread.start()
-        
-        return JsonResponse(research.as_dict())
-    
+        # thread = threading.Thread(target=run_async_research)
+        # thread.daemon = True
+        # thread.start()
+        return JsonResponse({"result":research_doc}, status=200)
+
     except Exception as e:
         print(f"Error in start_research: {str(e)}")
         return JsonResponse({"error": str(e)}, status=400)
-
 @require_http_methods(["GET"])
 def get_research(request, research_id):
     """Get the status and results of a research process"""
@@ -185,7 +195,7 @@ async def conduct_research(research_id):
     # Use sync_to_async to get the research object
     get_research = sync_to_async(Research.objects.get)
     research = await get_research(id=research_id)
-    
+
     try:
         # 1. Generate SERP queries
         # Use sync_to_async for database operations
@@ -193,30 +203,35 @@ async def conduct_research(research_id):
         def update_research_status(status):
             research.status = status
             research.save()
-        
+
         @sync_to_async
         def update_error(error_msg):
             research.status = "error"
             research.error = error_msg
             research.save()
             print(f"ERROR: {error_msg}")
-        
+
         print(f"Starting research for '{research.query}'")
+        print(f"Starting research for ID'{research.id}'")
+
         await update_research_status("generating_queries")
-        
+        cl=httpx.AsyncClient(timeout=30.0)
         try:
             print("Generating SERP queries...")
             serp_prompt = generate_serp_queries_prompt(research.query)
             print(f"Calling LLM with prompt: {serp_prompt[:100]}...")
-            serp_response = await call_llm(serp_prompt, research.model)
+            serp_response = await call_llm(prompt=serp_prompt,model=research.model,temperature=0.8,mtokens=1024,client=cl)
+
             print(f"LLM response received: {serp_response[:100]}...")
-            
+            serp_response=serp_response.replace("```json","") if serp_response else ""
+            serp_response=serp_response.replace("```","") if serp_response else ""
+
             # Parse JSON response to extract queries
             try:
                 # Handle different possible JSON formats
-                if '[' in serp_response:
-                    json_start = serp_response.find('[')
-                    json_end = serp_response.rfind(']') + 1
+                if "[" in serp_response and "]" in serp_response:
+                    json_start = serp_response.find("[")
+                    json_end = serp_response.rfind("]") + 1
                     json_str = serp_response[json_start:json_end]
                     serp_queries = json.loads(json_str)
                 else:
@@ -225,77 +240,90 @@ async def conduct_research(research_id):
             except json.JSONDecodeError as e:
                 print(f"JSON decode error: {str(e)}, Response: {serp_response[:200]}")
                 # Fall back to a single query if JSON parsing fails
-                serp_queries = [{"query": research.query, "researchGoal": "Research the main query"}]
+                serp_queries = [
+                    {"query": research.query[:399], "researchGoal": "Research the main query"}
+                ]
                 print("Using fallback single query")
         except Exception as e:
             print(f"Error in SERP query generation: {str(e)}")
             await update_error(f"Error generating SERP queries: {str(e)}")
             return
-        
+
         # Limit to max_searches
         @sync_to_async
         def get_max_searches():
             return research.max_searches
-        
+
         max_searches = await get_max_searches()
         serp_queries = serp_queries[:max_searches]
-        
+
         # 2. For each query, search the web and process results
         all_learnings = []
-        
+
+        final_report=""
         @sync_to_async
         def get_models():
-            return (research.search_model or research.model)
-        
+            return research.search_model or research.model
+
         search_model = await get_models()
-        
+
         for idx, query_obj in enumerate(serp_queries):
             try:
                 query = query_obj.get("query")
-                research_goal = query_obj.get("researchGoal", "Research this topic thoroughly")
-                
+                research_goal = query_obj.get(
+                    "researchGoal", "Research this topic thoroughly"
+                )
+
                 # Update status with query number
                 query_num = idx + 1
                 total_queries = len(serp_queries)
-                await update_research_status(f"searching: {query_num}/{total_queries}: {query}")
+                await update_research_status(
+                    f"searching: {query_num}/{total_queries}: {query}"
+                )
                 print(f"Searching for: {query}")
-                
+
                 # Search the web
                 try:
-                    search_results = await search_web(query)
+                    search_results = await search_web(query,cl)
                     print(f"Found {len(search_results)} search results")
                 except Exception as e:
                     print(f"Error in web search: {str(e)}")
                     await update_error(f"Error searching the web: {str(e)}")
                     return
-                
+
                 # Process search results
                 if search_results:
-                    await update_research_status(f"processing_results: {query_num}/{total_queries}: {query}")
-                    
-                    process_prompt = process_search_result_prompt(
-                        query, 
-                        research_goal, 
-                        search_results
+                    await update_research_status(
+                        f"processing_results: {query_num}/{total_queries}: {query}"
                     )
-                    print(f"Processing search results with prompt: {process_prompt[:100]}...")
-                    
+                    process_prompt = process_search_result_prompt(
+                        query, research_goal, search_results
+                    )
+                    print(
+                        f"Processing search results with prompt: {process_prompt[:100]}..."
+                    )
+
                     try:
-                        learnings_text = await call_llm(process_prompt, search_model)
-                        print(f"LLM learning response received: {learnings_text[:100]}...")
-                        
+                        learnings_text = await call_llm(prompt=process_prompt, model=search_model,temperature=0.7, mtokens=2000,client=cl)
+                        print(
+                            f"LLM learning response received: {learnings_text[:100]}..."
+                        )
+
                         # Extract learnings (simple approach - split by lines or extract bullet points)
-                        learnings = [line.strip() for line in learnings_text.split('\n') 
-                                    if line.strip() and not line.strip().startswith('#')]
+                        learnings = [
+                            line.strip()
+                            for line in learnings_text.split("\n")
+                            if line.strip() and not line.strip().startswith("#")
+                        ]
                         print(f"Extracted {len(learnings)} learnings")
                         all_learnings.extend(learnings)
-                        
+
                         # Update learnings in real-time
                         @sync_to_async
                         def update_learnings():
                             research.learnings = all_learnings
                             research.save()
-                        
+
                         await update_learnings()
                     except Exception as e:
                         print(f"Error processing search results: {str(e)}")
@@ -303,43 +331,40 @@ async def conduct_research(research_id):
                         return
             except Exception as e:
                 print(f"Error in query processing loop: {str(e)}")
-                await update_error(f"Error processing query {idx+1}: {str(e)}")
+                await update_error(f"Error processing query {idx + 1}: {str(e)}")
                 return
-        
+
         # 3. Generate the final report
         if all_learnings:
             await update_research_status("generating_report")
             print("Generating final report...")
-            
+
             @sync_to_async
             def get_query_and_requirement():
                 return research.query, research.custom_requirement
-            
+
             query, custom_requirement = await get_query_and_requirement()
-            
             report_prompt = write_final_report_prompt(
-                query,
-                all_learnings, 
-                custom_requirement
+                query, all_learnings, custom_requirement
             )
-            
+
             @sync_to_async
             def get_model():
                 return research.model
-            
+
             try:
                 model = await get_model()
                 print(f"Calling LLM for final report using model {model}...")
-                final_report = await call_llm(report_prompt, model, 0.8)
+                final_report = await call_llm(prompt=report_prompt, model=model, temperature=0.8,client=cl,mtokens=10000)
                 print(f"Final report received: {final_report[:100]}...")
-                
+
                 # Update the research results
                 @sync_to_async
                 def update_report():
                     research.report = final_report
                     research.status = "completed"
                     research.save()
-                
+
                 await update_report()
                 print("Research completed successfully")
             except Exception as e:
@@ -349,11 +374,14 @@ async def conduct_research(research_id):
         else:
             print("No learnings found, marking as no_results")
             await update_research_status("no_results")
-    
+        await cl.aclose()
+        final_report=final_report.replace("```markdown","")  if final_report else ""
+        final_report=final_report.replace("```","") if final_report else ""
+        return final_report
     except Exception as e:
         error_msg = f"Unhandled exception: {str(e)}"
         print(error_msg)
-        
+
         @sync_to_async
         def update_error_final():
             research.status = "error"
@@ -364,7 +392,7 @@ async def conduct_research(research_id):
 
 # --- LLM Integration ---
 
-async def call_llm(prompt, model, temperature=0.7):
+async def call_llm(prompt, model, temperature=0.7,mtokens=1000, client=None):
     """Call the LLM based on model type"""
     try:
         if model.startswith("gemini"):
@@ -372,29 +400,29 @@ async def call_llm(prompt, model, temperature=0.7):
             if not api_key:
                 raise Exception("No API key found for Gemini model")
             print(f"Calling Gemini API with key: {api_key[:5]}...{api_key[-4:]}")
-            return await call_gemini(prompt, model, api_key, temperature)
-        
+            return await call_gemini(prompt, model, api_key, temperature,mtokens=mtokens, client=client)
+
         elif model.startswith("gpt"):
             api_key = settings.OPENAI_API_KEY
             if not api_key:
                 raise Exception("No API key found for OpenAI model")
             print(f"Calling OpenAI API with key: {api_key[:5]}...")
-            return await call_openai(prompt, model, api_key, temperature)
-        
+            return await call_openai(prompt, model, api_key, temperature,mtokens,client)
+
         elif model.startswith("claude"):
             api_key = settings.ANTHROPIC_API_KEY
             if not api_key:
                 raise Exception("No API key found for Anthropic model")
             print(f"Calling Anthropic API with key: {api_key[:5]}...")
             return await call_anthropic(prompt, model, api_key, temperature)
-        
+
         else:
             raise Exception(f"Unsupported model: {model}")
     except Exception as e:
         print(f"Error in call_llm: {str(e)}")
         raise
 
-async def call_gemini(prompt, model, api_key, temperature):
+async def call_gemini(prompt, model, api_key, temperature,mtokens,client=None):
     """Call Gemini API with retry logic for rate limiting"""
     base_url = settings.GOOGLE_GENERATIVE_AI_API_BASE_URL
     url = f"{base_url}/{model}:generateContent"
@@ -403,7 +431,7 @@ async def call_gemini(prompt, model, api_key, temperature):
     
     payload = {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": temperature}
+        "generationConfig": {"temperature": temperature,"maxOutputTokens":mtokens},
     }
     
     # Retry configuration
@@ -411,52 +439,75 @@ async def call_gemini(prompt, model, api_key, temperature):
     retry_delay = 2  # Start with 2 seconds delay
     attempt = 0
     
+    if client is not None:
+        print("Using provided httpx client for Gemini API calls")
+    else:
+        print("Creating new httpx client for Gemini API calls")
+        client = httpx.AsyncClient()
     while attempt < max_retries:
         try:
-            print(f"Making request to Gemini API: {url} (attempt {attempt+1}/{max_retries})")
-            async with httpx.AsyncClient() as client:
-                response = await client.post(url, headers=headers, params=params, json=payload, timeout=30.0)
-                
-                if response.status_code == 429:
-                    # Rate limit error - parse the response to get retry info
-                    error_data = response.json()
-                    print(f"Rate limit error: {error_data}")
-                    
-                    # Calculate delay - default to exponential backoff if no specific delay given
-                    retry_delay_secs = retry_delay
-                    if "error" in error_data and "details" in error_data["error"]:
-                        for detail in error_data["error"]["details"]:
-                            if detail.get("@type") == "type.googleapis.com/google.rpc.RetryInfo":
-                                if "retryDelay" in detail:
-                                    retry_delay_secs = float(detail["retryDelay"].replace("s", ""))
-                    
-                    print(f"Rate limited. Retrying in {retry_delay_secs} seconds...")
-                    await asyncio.sleep(retry_delay_secs)
-                    
-                    # Exponential backoff for next attempt
-                    retry_delay *= 2
-                    attempt += 1
-                    continue
-                
-                if response.status_code != 200:
-                    error_text = response.text
-                    print(f"Gemini API error response: {error_text}")
-                    raise Exception(f"Gemini API error ({response.status_code}): {error_text}")
-                
-                result = response.json()
-                if "candidates" not in result or not result["candidates"]:
-                    print(f"Unexpected Gemini API response format: {result}")
-                    raise Exception("Unexpected Gemini API response format: missing candidates")
-                    
-                if "content" not in result["candidates"][0] or "parts" not in result["candidates"][0]["content"]:
-                    print(f"Unexpected Gemini API response structure: {result['candidates'][0]}")
-                    raise Exception("Unexpected Gemini API response structure")
-                    
-                if not result["candidates"][0]["content"]["parts"]:
-                    print("Empty parts in Gemini API response")
-                    raise Exception("Empty response from Gemini API")
-                    
-                return result["candidates"][0]["content"]["parts"][0]["text"]
+            print(
+                f"Making request to Gemini API: {url} (attempt {attempt + 1}/{max_retries})"
+            )
+            #async with client:
+            response = await client.post(
+                url, headers=headers, params=params, json=payload, timeout=30.0
+            )
+
+            if response.status_code == 429:
+                # Rate limit error - parse the response to get retry info
+                error_data = response.json()
+                print(f"Rate limit error: {error_data}")
+
+                # Calculate delay - default to exponential backoff if no specific delay given
+                retry_delay_secs = retry_delay
+                if "error" in error_data and "details" in error_data["error"]:
+                    for detail in error_data["error"]["details"]:
+                        if (
+                            detail.get("@type")
+                            == "type.googleapis.com/google.rpc.RetryInfo"
+                        ):
+                            if "retryDelay" in detail:
+                                retry_delay_secs = float(
+                                    detail["retryDelay"].replace("s", "")
+                                )
+
+                print(f"Rate limited. Retrying in {retry_delay_secs} seconds...")
+                await asyncio.sleep(retry_delay_secs)
+
+                # Exponential backoff for next attempt
+                retry_delay *= 2
+                attempt += 1
+                continue
+
+            if response.status_code != 200:
+                error_text = response.text
+                print(f"Gemini API error response: {error_text}")
+                raise Exception(
+                    f"Gemini API error ({response.status_code}): {error_text}"
+                )
+
+            result = response.json()
+            if "candidates" not in result or not result["candidates"]:
+                print(f"Unexpected Gemini API response format: {result}")
+                raise Exception(
+                    "Unexpected Gemini API response format: missing candidates"
+                )
+
+            if (
+                "content" not in result["candidates"][0]
+                or "parts" not in result["candidates"][0]["content"]
+            ):
+                print(
+                    f"Unexpected Gemini API response structure: {result['candidates'][0]}"
+                )
+                raise Exception("Unexpected Gemini API response structure")
+
+            if not result["candidates"][0]["content"]["parts"]:
+                print("Empty parts in Gemini API response")
+                raise Exception("Empty response from Gemini API")
+
+            return result["candidates"][0]["content"]["parts"][0]["text"]
         except httpx.RequestError as e:
             print(f"Gemini API request error: {str(e)}")
             raise Exception(f"Gemini API request error: {str(e)}")
@@ -467,20 +518,24 @@ async def call_gemini(prompt, model, api_key, temperature):
             if isinstance(e, asyncio.CancelledError):
                 raise
             print(f"Unexpected error in call_gemini: {str(e)}")
-            
+
             # Only retry on specific errors, raise others immediately
             if "rate limit" in str(e).lower() or "quota exceeded" in str(e).lower():
-                print(f"Rate limit or quota error. Retrying in {retry_delay} seconds...")
+                print(
+                    f"Rate limit or quota error. Retrying in {retry_delay} seconds..."
+                )
                 await asyncio.sleep(retry_delay)
                 retry_delay *= 2
                 attempt += 1
                 continue
             raise
-            
-    # If we've exhausted all retries
-    raise Exception(f"Failed after {max_retries} attempts to call Gemini API due to rate limiting")
 
-async def call_openai(prompt, model, api_key, temperature):
+    # If we've exhausted all retries
+    raise Exception(
+        f"Failed after {max_retries} attempts to call Gemini API due to rate limiting"
+    )
+
+async def call_openai(prompt, model, api_key, temperature,mtokens,client=None):
     """Call OpenAI API"""
     base_url = settings.OPENAI_API_BASE_URL
     url = f"{base_url}/chat/completions"
@@ -488,23 +543,27 @@ async def call_openai(prompt, model, api_key, temperature):
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}"
     }
-    
+    own_client=0
+    if not client:
+            client=httpx.AsyncClient()
+            own_client=1
     payload = {
         "model": model,
         "messages": [
             {"role": "system", "content": get_system_prompt()},
             {"role": "user", "content": prompt}
         ],
-        "temperature": temperature
+        "temperature": temperature,
+        "max_tokens":mtokens
     }
     
-    async with httpx.AsyncClient() as client:
-        response = await client.post(url, headers=headers, json=payload)
-        if response.status_code != 200:
-            raise Exception(f"OpenAI API error: {response.text}")
-        
-        result = response.json()
-        return result["choices"][0]["message"]["content"]
+    response = await client.post(url, headers=headers, json=payload)
+    if response.status_code != 200:
+        raise Exception(f"OpenAI API error: {response.text}")
+    
+    result = response.json()
+    if own_client:await client.aclose()
+    return result["choices"][0]["message"]["content"]
 
 async def call_anthropic(prompt, model, api_key, temperature):
     """Call Anthropic API"""
@@ -534,16 +593,18 @@ async def call_anthropic(prompt, model, api_key, temperature):
 
 # --- Web Search Integration ---
 
-async def search_web(query):
+async def search_web(query,client=None):
     """Search the web using available search API"""
+    if client is None:
+        client = httpx.AsyncClient()
     search_provider = settings.SEARCH_PROVIDER
     print(f"Using search provider: {search_provider}")
-    
+
     try:
         if search_provider == "searxng":
             return await search_with_searxng(query)
         elif search_provider == "tavily":
-            return await search_with_tavily(query)
+            return await search_with_tavily(query,client=client)
         else:
             raise Exception(f"Unsupported search provider: {search_provider}")
     except Exception as e:
@@ -623,34 +684,36 @@ async def search_with_searxng(query):
         }
     ]
 
-async def search_with_tavily(query):
+async def search_with_tavily(query,client=None):
     """Search the web using Tavily"""
+    if client is None:
+        client = httpx.AsyncClient()
     tavily_api_key = settings.TAVILY_API_KEY
     if not tavily_api_key:
         raise Exception("No Tavily API key configured")
-    
+
     tavily_url = settings.TAVILY_API_BASE_URL
     headers = {
         "Content-Type": "application/json",
-        "x-api-key": tavily_api_key
+        "Authorization": "Bearer " + tavily_api_key,
     }
     payload = {
         "query": query,
         "search_depth": "advanced",
         "include_answer": False,
         "include_domains": [],
-        "exclude_domains": []
+        "exclude_domains": [],
     }
-    
-    async with httpx.AsyncClient() as client:
-        response = await client.post(tavily_url, headers=headers, json=payload)
-        if response.status_code != 200:
-            raise Exception(f"Tavily API error: {response.text}")
-        
-        results = response.json()
-        sources = []
-        for result in results.get("results", [])[:5]:
-            if "content" in result and "url" in result:
-                sources.append({"url": result["url"], "content": result["content"]})
-        
-        return sources 
+
+    #async with client:
+    response = await client.post(tavily_url, headers=headers, json=payload)
+    if response.status_code != 200:
+        raise Exception(f"Tavily API error: {response.text}")
+
+    results = response.json()
+    sources = []
+    for result in results.get("results", [])[:5]:
+        if "content" in result and "url" in result:
+            sources.append({"url": result["url"], "content": result["content"]})
+
+    return sources
