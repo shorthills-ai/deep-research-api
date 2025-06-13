@@ -7,6 +7,7 @@ import asyncio
 import httpx
 import threading
 import time
+from openai import AsyncOpenAI
 from datetime import datetime
 from asgiref.sync import sync_to_async
 from .models import Research
@@ -407,7 +408,7 @@ async def call_llm(prompt, model, temperature=0.7,mtokens=1000, client=None):
             if not api_key:
                 raise Exception("No API key found for OpenAI model")
             print(f"Calling OpenAI API with key: {api_key[:5]}...")
-            return await call_openai(prompt, model, api_key, temperature,mtokens,client)
+            return await generate_completion(prompt, model, api_key, temperature,mtokens,httpx_client=client)
 
         elif model.startswith("claude"):
             api_key = settings.ANTHROPIC_API_KEY
@@ -535,35 +536,36 @@ async def call_gemini(prompt, model, api_key, temperature,mtokens,client=None):
         f"Failed after {max_retries} attempts to call Gemini API due to rate limiting"
     )
 
-async def call_openai(prompt, model, api_key, temperature,mtokens,client=None):
-    """Call OpenAI API"""
-    base_url = settings.OPENAI_API_BASE_URL
-    url = f"{base_url}/chat/completions"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}"
-    }
-    own_client=0
-    if not client:
-            client=httpx.AsyncClient()
-            own_client=1
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": get_system_prompt()},
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": temperature,
-        "max_tokens":mtokens
-    }
-    
-    response = await client.post(url, headers=headers, json=payload)
-    if response.status_code != 200:
-        raise Exception(f"OpenAI API error: {response.text}")
-    
-    result = response.json()
-    if own_client:await client.aclose()
-    return result["choices"][0]["message"]["content"]
+async def generate_completion(prompt: str, model, api_key, temperature,mtokens=1000,httpx_client=None) -> str:
+    try:
+        messages = []
+        prompt = prompt[0] if isinstance(prompt, tuple) else prompt
+        messages.append({"role": "system", "content": get_system_prompt()})
+        messages.append({"role": "user", "content": prompt})
+
+        client=AsyncOpenAI(
+            api_key=api_key,
+            http_client=httpx_client,
+            max_retries=3,
+        )
+        print("Generating completion...")
+        response = await client.chat.completions.create(
+            model=model,
+            max_tokens=mtokens,
+            messages=messages,
+            temperature=temperature,
+            )
+
+        if not response or not response.choices:
+            print("Empty response from OpenAI")
+            return ""
+
+        return response.choices[0].message.content.strip()
+
+    except Exception as e:
+        print(f"Completion generation error: {str(e)}")
+        return ""
+
 
 async def call_anthropic(prompt, model, api_key, temperature):
     """Call Anthropic API"""
