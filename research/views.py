@@ -432,14 +432,14 @@ async def call_gemini(prompt, model, api_key, temperature,mtokens,client=None):
     
     payload = {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": temperature,"maxOutputTokens":mtokens},
+        "generationConfig": {"temperature": temperature},
     }
     
     # Retry configuration
     max_retries = 5
     retry_delay = 2  # Start with 2 seconds delay
     attempt = 0
-    
+    print(f"Ignoring max tokens {mtokens}")
     if client is not None:
         print("Using provided httpx client for Gemini API calls")
     else:
@@ -452,7 +452,7 @@ async def call_gemini(prompt, model, api_key, temperature,mtokens,client=None):
             )
             #async with client:
             response = await client.post(
-                url, headers=headers, params=params, json=payload, timeout=30.0
+                url, headers=headers, params=params, json=payload, timeout=180.0
             )
 
             if response.status_code == 429:
